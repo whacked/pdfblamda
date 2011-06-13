@@ -1,0 +1,28 @@
+* read an annotated pdf and output an xoj file (hopefully you have the original pdf!)
+
+  Uploading in case someone finds it useful. 
+
+  "works for me" on ubuntu 10.10 and 11.04.
+
+** currently recognizes
+
+  - highlight
+  - freehand markup
+
+* dependencies
+
+  - Java runtime
+  - pdfbox 1.5
+  - clojure 1.2, clojure-contrib 1.2
+
+* installation
+
+  easiest way is to install [[https://github.com/technomancy/leiningen][leiningen]], run =lein deps= and have it fetch the jars for you. PDFBox was somehow more tricky; built that first and told lein where to look
+
+* usage
+
+  - modify =pdf-filepath= in core.clj or make it a command line argument, then run. it will save an xoj in the same directory as the input pdf file
+
+  - there is a disabled =when= block that's a literal port from the PDFBox annotation example, if you want to see how that syntax works.
+
+* License: Apache license 2.0
