@@ -24,11 +24,8 @@
    (org.apache.pdfbox.util PDFTextStripperByArea)
    (java.util.zip GZIPInputStream GZIPOutputStream)
    )
-  (:use (clojure.string)
-        (clojure.contrib.string)))
-
-(use 'clojure.string)
-(use 'clojure.contrib.string)
+  (:use [clojure.string]
+        [clojure.contrib.string :only [replace-re]]))
 
 
 
@@ -42,7 +39,7 @@
         "<background type=\"pdf\" "
         (if (= pageno 1)
           (str "domain=\"absolute\" filename=\""
-               (clojure.contrib.string/replace-re #"&" "&amp;" filename)
+               (replace-re #"&" "&amp;" filename)
                "\" ")
           "")
         "pageno=\"" pageno "\" />"
@@ -113,7 +110,7 @@
   (let [pdf-filename (. (java.io.File. pdf-filepath) getName)
         pdf (. PDDocument (load pdf-filepath))
         ls-page (.. pdf getDocumentCatalog getAllPages)
-        xoj-filepath (clojure.contrib.string/replace-re #"pdf$" "pdf.xoj" pdf-filepath)
+        xoj-filepath (replace-re #"pdf$" "pdf.xoj" pdf-filepath)
         xoj-out (FileOutputStream. xoj-filepath)
         xoj-buf (-> xoj-out GZIPOutputStream. OutputStreamWriter. BufferedWriter.)
 
