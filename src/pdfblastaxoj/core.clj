@@ -1,7 +1,4 @@
-
-;; (use '[clojure.contrib.repl-utils :only (show)])
-
-(ns pdfblastaxoj.core
+(ns pdfblambda.core
   (:import
    (java.util List)
    (java.io IOException
@@ -10,10 +7,10 @@
    (java.awt.geom Rectangle2D$Float)
    (org.apache.pdfbox.pdmodel PDDocument PDPage)
    (org.apache.pdfbox.pdmodel.common PDRectangle)
-   (org.apache.pdfbox.pdmodel.edit PDPageContentStream)
+   (org.apache.pdfbox.pdmodel PDPageContentStream)
    (org.apache.pdfbox.pdmodel.font PDFont PDType1Font)
    (org.apache.pdfbox.pdmodel.graphics.color PDGamma)
-   (org.apache.pdfbox.pdmodel.interactive.action.type PDActionURI)
+   (org.apache.pdfbox.pdmodel.interactive.action PDActionURI)
    (org.apache.pdfbox.pdmodel.interactive.annotation PDAnnotationLine
                                                      PDAnnotationSquareCircle
                                                      PDAnnotationMarkup
@@ -21,29 +18,26 @@
                                                      PDAnnotationTextMarkup
                                                      PDAnnotationLink
                                                      PDBorderStyleDictionary)
-   (org.apache.pdfbox.util PDFTextStripperByArea)
+   (org.apache.pdfbox.text PDFTextStripperByArea)
    (java.util.zip GZIPInputStream GZIPOutputStream)
    )
-  (:use [clojure.string]
-        [clojure.contrib.string :only [replace-re]]))
-
-
+  (:require [clojure.string :as s]))
 
 (do
- (defn make-xoj-header []
-   (str
-    "<?xml version=\"1.0\" standalone=\"no\"?>\n<xournal version=\"0.4.5\">
+  (defn make-xoj-header []
+    (str
+     "<?xml version=\"1.0\" standalone=\"no\"?>\n<xournal version=\"0.4.5\">
 <title>Xournal document - see http://math.mit.edu/~auroux/software/xournal/</title>"))
- (defn make-xoj-page-header [w h filename pageno]
-   (str "<page width=\"" w "\" height=\"" h "\">"
-        "<background type=\"pdf\" "
-        (if (= pageno 1)
-          (str "domain=\"absolute\" filename=\""
-               (replace-re #"&" "&amp;" filename)
-               "\" ")
-          "")
-        "pageno=\"" pageno "\" />"
-        "<layer>"))
+  (defn make-xoj-page-header [w h filename pageno]
+    (str "<page width=\"" w "\" height=\"" h "\">"
+         "<background type=\"pdf\" "
+         (if (= pageno 1)
+           (str "domain=\"absolute\" filename=\""
+                (s/replace filename #"&" "&amp;")
+                "\" ")
+           "")
+         "pageno=\"" pageno "\" />"
+         "<layer>"))
  (defn make-xoj-page-footer []
    "</layer>\n</page>")
  (defn make-xoj-footer [] "</xournal>")
@@ -81,9 +75,9 @@
             (let [hex (str (Integer/toHexString (Math/round (* f 255))))]
               (if (> 2 (count hex))
                 (str "0" hex) hex)))
-          [(. pdg getR)
-           (. pdg getG)
-           (. pdg getB)
+          [(get (.getComponents pdg) 0)
+           (get (.getComponents pdg) 1)
+           (get (.getComponents pdg) 2)
            (if alpha (first alpha) 1.0) ;; alpha
            ]))))
 
@@ -108,9 +102,9 @@
 (defn parse-pdf-make-xoj [pdf-filepath & yes-extract-text]
   (println "---------------------------------------------------")
   (let [pdf-filename (. (java.io.File. pdf-filepath) getName)
-        pdf (. PDDocument (load pdf-filepath))
-        ls-page (.. pdf getDocumentCatalog getAllPages)
-        xoj-filepath (replace-re #"pdf$" "pdf.xoj" pdf-filepath)
+        pdf (PDDocument/load (java.io.File. pdf-filepath))
+        page-total (.. pdf getDocumentCatalog getPages getCount)
+        xoj-filepath (s/replace pdf-filepath #"pdf$" "pdf.xoj")
         xoj-out (FileOutputStream. xoj-filepath)
         xoj-buf (-> xoj-out GZIPOutputStream. OutputStreamWriter. BufferedWriter.)
 
@@ -123,11 +117,11 @@
         ]
     
     (xoj-out-writeline (make-xoj-header))
-    (doseq [[page pageno] (map vector
-                               ls-page
-                               (range 1 (inc (count ls-page))))]
-      (let [page-w (.. page findMediaBox getWidth)
-            page-h (.. page findMediaBox getHeight)
+    (doseq [i (range page-total)]
+      (let [pageno (inc i)
+            page (.getPage pdf i)
+            page-w (.. page getMediaBox getWidth)
+            page-h (.. page getMediaBox getHeight)
             ls-annot (. page getAnnotations)
             ]
         (xoj-out-writeline (make-xoj-page-header page-w page-h pdf-filename pageno))
@@ -171,7 +165,9 @@
                   ;;      "\nEXTRACT:" (. psba getTextForRegion region-name)
                   ;;      "\nSUBJECT:" (. annot getSubject)
                   ;;      "\nDATE:" (. annot getCreationDate)
-                  ;;      "\nCOLOR:" (let [mycol (. annot getColour)]
+                  ;;      ;; WARNING XXX
+                  ;;      ;; THIS IS OUT OF DATE using 2.0.0!
+                  ;;      "\nCOLOR:" (let [mycol (. annot getColor)]
                   ;;                   (str (. mycol getR) " "
                   ;;                        (. mycol getG) " "
                   ;;                        (. mycol getB)))
@@ -193,15 +189,17 @@
                     ;; for the pencil object, this seems to give a list of floats
                     
                     (cond
-                     (= annot-subtype "Ink")
-                     (let [InkListObj (. (. annot getDictionary) getDictionaryObject "InkList")]
+                     (= annot-subtype org.apache.pdfbox.pdmodel.fdf.FDFAnnotationInk/SUBTYPE)
+                     (let [InkListObj (.getInkList (org.apache.pdfbox.pdmodel.fdf.FDFAnnotationInk. (.getCOSObject annot)))
+                           ;; InkListObj (. (. annot get) getDictionaryObject "InkList")
+                           ]
                        (when (not (nil? InkListObj))
                          (doseq [ls-COSVal InkListObj]
                            ;;(println (map #(identity %) (. InkListObj toList)))
                            (xoj-out-writeline
                             (make-stroke
-                             (flip-y-in-coord-list (. ls-COSVal toFloatArray) page-h) 
-                             (PDGamma2RGB (. annot getColour))))
+                             (flip-y-in-coord-list ls-COSVal page-h) 
+                             (PDGamma2RGB (. annot getColor))))
                            ;;(doseq [COSVal (partition 2 ls-COSVal)]
                            ;;  (println "x " (. (first COSVal) floatValue) " y " (. (second COSVal) floatValue)))
                            )
@@ -241,7 +239,7 @@
                        
                        ;; this one writes the big blob (entire annotation rect into a single fat highlight stroke)
                        ;; (xoj-out-writeline
-                       ;;  (make-highlight [x1 mean-y x2 mean-y] (PDGamma2RGB (. annot getColour) 0.5) (- y1 y2)))
+                       ;;  (make-highlight [x1 mean-y x2 mean-y] (PDGamma2RGB (. annot getColor) 0.5) (- y1 y2)))
                        
                        (cond (= annot-subtype "Square")
                              (xoj-out-writeline (make-stroke
@@ -252,7 +250,7 @@
                                                     x0 (- page-h y1) x0 (- page-h y0) ;; up
                                                     ]
                                                    )
-                                                 (PDGamma2RGB (. annot getColour) 0.5)))
+                                                 (PDGamma2RGB (. annot getColor) 0.5)))
 
                              (= annot-subtype "Text")
                              (xoj-out-writeline (make-text [x1 (- page-h y1)] (. annot getContents) "#0000ffff"))
@@ -283,7 +281,7 @@
                                                 (* (- qp-y2 qp-y1) 0.125)
                                                 )
                                      ]
-                                 (xoj-out-writeline (make-highlight [qp-x1 qp-ym qp-x2 qp-ym] (PDGamma2RGB (. annot getColour) 0.5) qp-H)))
+                                 (xoj-out-writeline (make-highlight [qp-x1 qp-ym qp-x2 qp-ym] (PDGamma2RGB (. annot getColor) 0.5) qp-H)))
                                ))
 
                        (when yes-extract-text
